@@ -49,17 +49,4 @@ public class CinemaRepository {
     public void removeOrder(String token) {
         orders.remove(token);
     }
-
-    public RevokeQueryDTO revokeOrder(RevokeQueryDTO revokeQuery) {
-        if (revokeQuery.getToken() == null)
-            throw new NotFoundException("Token is missing");
-        Order order = orders.get(revokeQuery.getToken());
-        if (order == null)
-            throw new NotFoundException("Order "+ revokeQuery.getToken() +" not found or already revoked!");
-        CinemaRoom cinemaRoom = getCinemaRoomByName(order.getRoomName());
-        cinemaRoom.revokeOrder(order);
-        removeOrder(order.getToken());
-        revokeQuery.injectData(order);
-        return revokeQuery;
-    }
 }
