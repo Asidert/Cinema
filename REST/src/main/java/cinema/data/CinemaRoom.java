@@ -1,32 +1,29 @@
 package cinema.data;
 
-import cinema.exceptions.NotEnoughArgumentsException;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import cinema.data.dto.PurchaseQueryDTO;
+import cinema.exception.NotFoundException;
+import cinema.repository.CinemaRepository;
 import lombok.Getter;
 
 import java.util.*;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Getter
 public class CinemaRoom {
-    @JsonIgnore
-    ObjectMapper mapper = new ObjectMapper();
+    private final String name;
     @JsonIgnore
     private final int totalRows;
     @JsonIgnore
     private final int totalColumns;
     private final Map<Integer, SeatRow> seatRows = new HashMap<>();
-    @JsonIgnore
-    private final Map<String, Map<Integer, int[]>> orders = new HashMap<>();
     private final int maximumSeatsCount;
     private int availableSeatsCount;
     @JsonIgnore
     private int income = 0;
 
-    public CinemaRoom(int rows, int columns, Map<Integer, Integer> priceRanges) {
+    public CinemaRoom(String name, int rows, int columns, Map<Integer, Integer> priceRanges) {
+        this.name = name;
         totalRows = rows;
         totalColumns = columns;
         maximumSeatsCount = rows * columns;
@@ -41,98 +38,56 @@ public class CinemaRoom {
         }
     }
 
-    private void registerOrder(Order order) {
-        if (order.getStatus() == OrderStatus.FAIL)
-            return;
-        orders.put(order.getToken(), order.getSeatsData());
+    public SeatRow getSeatRowById(int id) {
+        SeatRow seatRow = seatRows.get(id);
+        if (seatRow == null)
+            throw new NotFoundException("There are no seats row with id " + id + " in room with name "+ getName());
+        return seatRow;
     }
 
-    public String processSimpleOrder(int row, int column){
-        SeatRow seatRow = seatRows.get(row);
-        Order order;
-        if (seatRow.tryBookSeat(column)) {
-            order = new Order(OrderStatus.SUCCESS, seatRow.getSeatPrice(), 1, Map.of(row, new int[]{column}));
-        } else {
-            order = new Order();
-        }
-        registerOrder(order);
-        try {
-            return mapper.writeValueAsString(order);
-        } catch (JsonProcessingException e) {
-            return null;
-        }
-    }
-
-    public String processOrder(JsonNode orderData){
-        Map<Integer, int[]> orderMap;
-        try {
-            orderMap = mapper.convertValue(orderData, new TypeReference<>() {});
-        } catch (Exception e) {
-            throw new NotEnoughArgumentsException();
-        }
-        int orderPrice = 0;
-        int orderedSeats = 0;
-        boolean withoutCollisions = true;
-        for (int key: orderMap.keySet()) {
-            SeatRow row = seatRows.get(key);
-            int[] ordersInRow = orderMap.get(key);
+    public Order processOrder(PurchaseQueryDTO purchase){
+        int processedPrice = 0;
+        int processedSeatsCount = 0;
+        boolean hasCollisions = false;
+        Map<Integer, int[]> orderedSeats = purchase.getOrderedSeats();
+        for (int key: orderedSeats.keySet()) {
+            SeatRow row = getSeatRowById(key);
+            int[] ordersInRow = orderedSeats.get(key);
             for (int i = ordersInRow.length - 1; i >= 0; i--) {
                 if (row.tryBookSeat(ordersInRow[i])) {
-                    orderPrice += row.getSeatPrice();
-                    orderedSeats++;
-                    availableSeatsCount--;
+                    processedPrice += row.getSeatPrice();
+                    processedSeatsCount++;
                 } else {
-                    withoutCollisions = false;
+                    hasCollisions = true;
                     ordersInRow[i] = -1;
                 }
             }
         }
-        income += orderPrice;
-        OrderStatus status;
-        if (orderPrice == 0) {
-            status = OrderStatus.FAIL;
-        } else {
-            status = withoutCollisions ? OrderStatus.SUCCESS : OrderStatus.SEMI_SUCCESS;
-        }
-        Order order = new Order(status, orderPrice, orderedSeats, orderMap);
-        registerOrder(order);
-        try {
-            return mapper.writeValueAsString(order);
-        } catch (JsonProcessingException e) {
-            return null;
-        }
+        return registerOrder(orderedSeats, processedPrice, processedSeatsCount, hasCollisions);
     }
 
-    public boolean revokeOrder(String token) {
-        if (!orders.containsKey(token))
-            return false;
-        processRevokeOrder(token);
-        return true;
+    private Order registerOrder(Map<Integer, int[]> orderedSeats, int income, int seats, boolean hasCollisions) {
+        if (income == 0) {
+            return new Order();
+        }
+        this.income += income;
+        availableSeatsCount -= seats;
+        return new Order(hasCollisions ? OrderStatus.SEMI_SUCCESS : OrderStatus.SUCCESS, getName(), income, seats, orderedSeats);
     }
 
-    private void processRevokeOrder(String token) {
-        Map<Integer, int[]> orderData = orders.get(token);
+    public void revokeOrder(Order order) {
+        Map<Integer, int[]> orderData = order.getSeatsData();
         for (int key: orderData.keySet()) {
             SeatRow row = seatRows.get(key);
             int[] ordersInRow = orderData.get(key);
-            for (int seat: ordersInRow) {
+            for (int seat : ordersInRow) {
                 if (seat == -1) {
                     continue;
                 }
                 row.revokeSeat(seat);
+                income -= row.getSeatPrice();
                 availableSeatsCount++;
             }
         }
-        orders.remove(token);
-    }
-
-    @JsonIgnore
-    public Map<String, Map<Integer, int[]>> getOrders() {
-        return orders;
-    }
-
-    @JsonIgnore
-    public String getStats() {
-        return String.format("{\"current_income\":%d,\"maximum_seats\":%d,\"available_seats\":%d}", income, maximumSeatsCount, availableSeatsCount);
     }
 }
