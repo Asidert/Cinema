@@ -28,6 +28,6 @@ public class Order {
         this.orderPrice = orderPrice;
         this.seatsAmount = seatsAmount;
         this.seatsData = seatsData;
-        token = UUID.randomUUID().toString();
+        token = roomName + ":" + UUID.randomUUID().toString();
     }
 }

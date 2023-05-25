@@ -17,7 +17,7 @@ public class CinemaDataService {
         return cinemaRepository.getCinemaData(query);
     }
 
-    public Map<String, Order> getAllOrders() {
+    public CinemaRepository.CinemaOrders getAllOrders() {
         return cinemaRepository.getOrders();
     }
 }

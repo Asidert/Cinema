@@ -6,6 +6,9 @@ import cinema.data.dto.CinemaQueryDTO;
 import cinema.data.dto.RevokeQueryDTO;
 import cinema.exception.NotFoundException;
 import jakarta.annotation.PostConstruct;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.springframework.stereotype.Repository;
 
 import java.util.HashMap;
@@ -14,7 +17,7 @@ import java.util.Map;
 @Repository
 public class CinemaRepository {
     private final Map<String, CinemaRoom> cinemaRooms = new HashMap<>();
-    private final Map<String, Order> orders = new HashMap<>();
+    private final CinemaOrders orders = new CinemaOrders();
 
     @PostConstruct
     public void initCinemaRooms() {
@@ -38,15 +41,36 @@ public class CinemaRepository {
         return query;
     }
 
-    public Map<String, Order> getOrders() {
+    public CinemaOrders getOrders() {
         return orders;
     }
 
-    public void registerOrder(Order order) {
-        orders.put(order.getToken(), order);
+    public void registerOrder(Order order){
+        orders.registerOrder(order);
     }
 
-    public void removeOrder(String token) {
-        orders.remove(token);
+    public Order removeOrder(String token){
+        return orders.removeOrder(token);
+    }
+
+    @Getter
+    public static class CinemaOrders {
+        private final Map<String, Map<String, Order>> orders = new HashMap<>();
+
+        public void registerOrder(Order order) {
+            Map<String, Order> ordersInRoom = orders.computeIfAbsent(order.getRoomName(), k -> new HashMap<>());
+            ordersInRoom.put(order.getToken(), order);
+        }
+
+        public Order removeOrder(String token) {
+            String roomNameFromToken = token.split(":", 2)[0];
+            Map<String, Order> ordersInRoom = orders.get(roomNameFromToken);
+            if (ordersInRoom == null || !ordersInRoom.containsKey(token)) {
+                return null;
+            }
+            Order order = ordersInRoom.get(token);
+            ordersInRoom.remove(token);
+            return order;
+        }
     }
 }
